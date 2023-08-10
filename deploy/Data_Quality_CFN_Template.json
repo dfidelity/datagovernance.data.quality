@@ -1,0 +1,1178 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Template for creating basic resources",
+  "Parameters": {
+    "BillingEnvironmentName": {
+      "AllowedPattern": "[a-zA-Z0-9]*",
+      "Default": "dev",
+      "Description": "The target environment in which the stack is being created",
+      "MinLength": 2,
+      "Type": "String"
+    },
+    "deploymentRole": {
+      "Description": "The target environment in which the stack is being created",
+      "Type": "String"
+    },
+    "TimeoutValueRecommendation": {
+      "Default": "60",
+      "Type": "Number",
+      "Description": "The Glue job timeout value for DQ Recommendation job"
+    },
+    "TimeoutValueEvaluation": {
+      "Default": "60",
+      "Type": "Number",
+      "Description": "The Glue job timeout value for DQ Evaluation job"
+    },
+    "NumWorkersEvaluation": {
+      "Default": "5",
+      "Type": "Number",
+      "Description": "The Glue job worker count value for DQ Evaluation job"
+    },
+    "NumWorkersRecommendation": {
+      "Default": "5",
+      "Type": "Number",
+      "Description": "The Glue job worker count value for DQ Recommendation job"
+    },
+    "TimeoutValueGlue": {
+      "Default": "60",
+      "Type": "Number",
+      "Description": "The Glue job timeout value"
+    },
+    "NumWorkersGlue": {
+      "Default": "5",
+      "Type": "Number",
+      "Description": "The Glue job worker count value"
+    },
+    "WorkerTypeGlue": {
+      "Default": "G.1X",
+      "Type": "String",
+      "Description": "The Glue job worker type"
+    },
+    "GlueJobCodeBucket": {
+      "Type": "String",
+      "Description": "The S3 bucket for Glue job scripts"
+    }
+  },
+  "Mappings": {
+    "General": {
+      "Tags": {
+        "FinanceActivityId": "8000",
+        "FinanceEntityId": "0092",
+        "FinanceManagementCentreId": "99440",
+        "JiraProjectCode": "RDL",
+        "PmProgramme": "platform",
+        "PmProjectCode": "n/a"
+      }
+    }
+  },
+  "Resources": {
+    "DataQualityZoneKMSKey": {
+      "Type": "AWS::KMS::Key",
+      "Properties": {
+        "Description": "Key to encrypt the data under Data Quality Zone S3 bucket for GBS",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "rx-gbs-datalake-data-quality-zone"
+          },
+          {
+            "Key": "rx:billing:finance-activity-id",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "FinanceActivityId"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:finance-entity-id",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "FinanceEntityId"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:finance-management-centre-id",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "FinanceManagementCentreId"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:jira-project-code",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "JiraProjectCode"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:pm-programme",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "PmProgramme"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:pm-project-code",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "PmProjectCode"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:environment-name",
+            "Value": {
+              "Ref": "BillingEnvironmentName"
+            }
+          }
+        ],
+        "KeyPolicy": {
+          "Version": "2012-10-17",
+          "Id": "key-default-1",
+          "Statement": [
+            {
+              "Sid": "Enable IAM User Permissions",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": [
+                  {
+                    "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:root"
+                  },
+                  {
+                    "Ref": "deploymentRole"
+                  }
+                ]
+              },
+              "Action": [
+                "kms:*"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Sid": "Allow access for Key Administrators",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": [
+                  {
+                    "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:role/ADFS-DataSupport"
+                  },
+                  {
+                    "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:role/ADFS-DataAdministrator"
+                  }
+                ]
+              },
+              "Action": [
+                "kms:Create*",
+                "kms:Describe*",
+                "kms:Enable*",
+                "kms:List*",
+                "kms:Put*",
+                "kms:Update*",
+                "kms:Revoke*",
+                "kms:Disable*",
+                "kms:Get*",
+                "kms:Delete*",
+                "kms:TagResource",
+                "kms:UntagResource",
+                "kms:ScheduleKeyDeletion",
+                "kms:CancelKeyDeletion"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Sid": "Allow use of the key",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": [
+                  {
+                    "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:role/ADFS-DataEngineer"
+                  },
+                  {
+                    "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:role/ADFS-DataDeveloperGeneral"
+                  },
+                  {
+                    "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:role/ADFS-DataDeveloperConfidential"
+                  },
+                  {
+                    "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:role/ADFS-DataDeveloperRestricted"
+                  },
+                  {
+                    "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:role/ADFS-DataConsumerGeneral"
+                  },
+                  {
+                    "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:role/ADFS-DataConsumerConfidential"
+                  },
+                  {
+                    "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:role/ADFS-DataConsumerRestricted"
+                  },
+                  {
+                    "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:root"
+                  }
+                ]
+              },
+              "Action": [
+                "kms:Encrypt",
+                "kms:Decrypt",
+                "kms:ReEncrypt*",
+                "kms:GenerateDataKey*",
+                "kms:DescribeKey"
+              ],
+              "Resource": "*"
+            }
+          ]
+        }
+      }
+    },
+    "DataQualityZoneKeyAlias": {
+      "Type": "AWS::KMS::Alias",
+      "Properties": {
+        "AliasName": "alias/rx-gbs-datalake-data-quality-zone",
+        "TargetKeyId": {
+          "Ref": "DataQualityZoneKMSKey"
+        }
+      }
+    },
+    "DataQualityS3Bucket": {
+      "Type": "AWS::S3::Bucket",
+      "Description": "Creating Amazon S3 bucket from CloudFormation",
+      "Properties": {
+        "BucketName": {
+          "Fn::Sub": "rx-gbs-datalake-data-quality-zone-${BillingEnvironmentName}"
+        },
+        "AccessControl": "Private",
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "aws:kms",
+                "KMSMasterKeyID": {
+                  "Fn::GetAtt": [   
+                    "DataQualityZoneKMSKey",
+                    "Arn"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "rx-gbs-datalake-data-quality-zone-${BillingEnvironmentName}"
+            }
+          },
+          {
+            "Key": "rx:billing:finance-activity-id",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "FinanceActivityId"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:finance-entity-id",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "FinanceEntityId"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:finance-management-centre-id",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "FinanceManagementCentreId"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:jira-project-code",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "JiraProjectCode"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:pm-programme",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "PmProgramme"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:pm-project-code",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "PmProjectCode"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:environment-name",
+            "Value": {
+              "Ref": "BillingEnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "AWSGlueServiceRoleDQ": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {
+          "Fn::Sub": "AWSGlueServiceRoleDQ-${BillingEnvironmentName}"
+        },
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole"
+        ],
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "glue.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyName": {
+              "Fn::Sub": "DataQualityS3FullAccess-${BillingEnvironmentName}"
+            },
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Action": "s3:*",
+                  "Resource": [
+                    {
+                      "Fn::Join": [
+                        "",
+                        [
+                          "arn:aws:s3:::",
+                          {
+                            "Fn::ImportValue": {
+                              "Fn::Sub": "rawzone-bucket-${BillingEnvironmentName}"
+                            }
+                          }
+                        ]
+                      ]
+                    },
+                    {
+                      "Fn::Join": [
+                        "",
+                        [
+                          "arn:aws:s3:::",
+                          {
+                            "Fn::ImportValue": {
+                              "Fn::Sub": "rawzone-bucket-${BillingEnvironmentName}"
+                            }
+                          },
+                          "/data_quality",
+                          "/*"
+                        ]
+                      ]
+                    },
+                    {
+                      "Fn::Join": [
+                        "",
+                        [
+                          "arn:aws:s3:::",
+                          {
+                            "Fn::ImportValue": {
+                              "Fn::Sub": "processingzone-bucket-${BillingEnvironmentName}"
+                            }
+                          }
+                        ]
+                      ]
+                    },
+                    {
+                      "Fn::Join": [
+                        "",
+                        [
+                          "arn:aws:s3:::",
+                          {
+                            "Fn::ImportValue": {
+                              "Fn::Sub": "processingzone-bucket-${BillingEnvironmentName}"
+                            }
+                          },
+                          "/*"
+                        ]
+                      ]
+                    },
+                    {
+                      "Fn::Join": [
+                        "",
+                        [
+                          "arn:aws:s3:::",
+                          {
+                              "Fn::Sub": "rx-gbs-datalake-data-quality-zone-${BillingEnvironmentName}"
+                          }
+                        ]
+                      ]
+                    },
+                    {
+                      "Fn::Join": [
+                        "",
+                        [
+                          "arn:aws:s3:::",
+                          {
+                              "Fn::Sub": "rx-gbs-datalake-data-quality-zone-${BillingEnvironmentName}"
+                            },
+                          "/*"
+                        ]
+                      ]
+                    }
+                  ],
+                  "Effect": "Allow"
+                },
+                {
+                  "Action": [
+                    "kms:DescribeKey",
+                    "kms:GenerateDataKey",
+                    "kms:Decrypt",
+                    "kms:Encrypt"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::ImportValue": {
+                        "Fn::Sub": "raw-zone-kms-key-arn-${BillingEnvironmentName}"
+                      }
+                    },
+                    {
+                      "Fn::ImportValue": {
+                        "Fn::Sub": "processing-zone-kms-key-arn-${BillingEnvironmentName}"
+                      }
+                    },
+                    {
+                      "Fn::GetAtt": [
+                        "DataQualityZoneKMSKey",
+                        "Arn"
+                      ]
+                    }
+                  ],
+                  "Effect": "Allow"
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "rx-gbs-datalake-data-quality-role"
+          },
+          {
+            "Key": "rx:billing:finance-activity-id",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "FinanceActivityId"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:finance-entity-id",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "FinanceEntityId"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:finance-management-centre-id",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "FinanceManagementCentreId"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:jira-project-code",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "JiraProjectCode"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:pm-programme",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "PmProgramme"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:pm-project-code",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "PmProjectCode"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:environment-name",
+            "Value": {
+              "Ref": "BillingEnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+    "PassRolePolicy": {
+      "Type": "AWS::IAM::Policy",
+      "DependsOn": [
+        "AWSGlueServiceRoleDQ"
+      ],
+      "Properties": {
+        "PolicyName": {
+          "Fn::Sub": "AWSGlueServiceRoleDQ-passRole-permissions-${BillingEnvironmentName}"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "iam:GetRole",
+                "iam:PassRole"
+              ],
+              "Resource": {
+                "Fn::GetAtt": [
+                  "AWSGlueServiceRoleDQ",
+                  "Arn"
+                ]
+              }
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "lakeformation:GetDataAccess"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "dynamodb:*"
+              ],
+              "Resource": "*"
+            }
+          ]
+        },
+        "Roles": [
+          {
+            "Ref": "AWSGlueServiceRoleDQ"
+          }
+        ]
+      }
+    },
+    "AutomateDQRulesetRecommendation": {
+      "Type": "AWS::Glue::Job",
+      "DependsOn": [
+        "AWSGlueServiceRoleDQ"
+      ],
+      "Properties": {
+        "Command": {
+          "Name": "glueetl",
+          "ScriptLocation": {
+            "Fn::Sub": "s3://${GlueJobCodeBucket}/governance/scripts/AutomateDQRulesetRecommendation.py"
+          },
+          "PythonVersion": "3"
+        },
+        "GlueVersion": "3.0",
+        "DefaultArguments": {
+          "--additional-python-modules": "boto3>=1.26.71",
+          "--database_suffix": {
+            "Fn::Sub": "_${BillingEnvironmentName}"
+          },
+          "--log_table_name": {
+            "Fn::Sub": "DQ_Ruleset_Creation_RunLog_${BillingEnvironmentName}"
+          },
+          "--output_bucket_name": {
+            "Fn::ImportValue": {
+              "Fn::Sub": "rawzone-bucket-${BillingEnvironmentName}"
+            }
+          },
+          "--output_key": "data_quality/config/table_ruleset_mapping/ruleset_mapping.csv",
+          "--output_prefix": "data_quality/config/table_ruleset_mapping/",
+          "--path_to_file": {
+            "Fn::Join": [
+              "/",
+              [
+                "s3:/",
+                {
+                  "Fn::ImportValue": {
+                    "Fn::Sub": "rawzone-bucket-${BillingEnvironmentName}"
+                  }
+                },
+                "data_quality",
+                "config",
+                "table_ruleset_mapping"
+              ]
+            ]
+          },
+          "--role_name": {
+            "Ref": "AWSGlueServiceRoleDQ"
+          },
+          "--timeout_value": {
+            "Ref": "TimeoutValueRecommendation"
+          },
+          "--workers_count": {
+            "Ref": "NumWorkersRecommendation"
+          }
+        },
+        "MaxRetries": 0,
+        "WorkerType": {
+          "Ref": "WorkerTypeGlue"
+        },
+        "Timeout": {
+          "Ref": "TimeoutValueGlue"
+        },
+        "NumberOfWorkers": {
+          "Ref": "NumWorkersGlue"
+        },
+        "ExecutionProperty": {
+          "MaxConcurrentRuns": 1
+        },
+        "Name": {
+          "Fn::Sub": "AutomateDQRulesetRecommendation-${BillingEnvironmentName}"
+        },
+        "Role": {
+          "Ref": "AWSGlueServiceRoleDQ"
+        }
+      }
+    },
+    "AutomateDQEvaluation": {
+      "Type": "AWS::Glue::Job",
+      "DependsOn": [
+        "AWSGlueServiceRoleDQ"
+      ],
+      "Properties": {
+        "Command": {
+          "Name": "glueetl",
+          "ScriptLocation": {
+            "Fn::Sub": "s3://${GlueJobCodeBucket}/governance/scripts/AutomateDQEvaluation.py"
+          },
+          "PythonVersion": "3"
+        },
+        "GlueVersion": "3.0",
+        "DefaultArguments": {
+          "--additional-python-modules": "boto3>=1.26.71",
+          "--log_table_name": {
+            "Fn::Sub": "DQ_Evaulation_RunLog_${BillingEnvironmentName}"
+          },
+          "--output_bucket_name": {
+            "Fn::ImportValue": {
+              "Fn::Sub": "rawzone-bucket-${BillingEnvironmentName}"
+            }
+          },
+          "--read_from_file": {
+            "Fn::Join": [
+              "/",
+              [
+                "s3:/",
+                {
+                  "Fn::ImportValue": {
+                    "Fn::Sub": "rawzone-bucket-${BillingEnvironmentName}"
+                  }
+                },
+                "data_quality",
+                "config",
+                "table_ruleset_mapping",
+                "ruleset_mapping.csv"
+              ]
+            ]
+          },
+          "--result_prefix_s3": {
+            "Fn::Join": [
+              "/",
+              [
+                "s3:/",
+                {
+                  "Fn::ImportValue": {
+                    "Fn::Sub": "rawzone-bucket-${BillingEnvironmentName}"
+                  }
+                },
+                "data_quality",
+                "results"
+              ]
+            ]
+          },
+          "--role_name": {
+            "Ref": "AWSGlueServiceRoleDQ"
+          },
+          "--timeout_value": {
+            "Ref": "TimeoutValueEvaluation"
+          },
+          "--workers_count": {
+            "Ref": "NumWorkersEvaluation"
+          }
+        },
+        "MaxRetries": 0,
+        "WorkerType": {
+          "Ref": "WorkerTypeGlue"
+        },
+        "Timeout": {
+          "Ref": "TimeoutValueGlue"
+        },
+        "NumberOfWorkers": {
+          "Ref": "NumWorkersGlue"
+        },
+        "ExecutionProperty": {
+          "MaxConcurrentRuns": 1
+        },
+        "Name": {
+          "Fn::Sub": "AutomateDQEvaluation-${BillingEnvironmentName}"
+        },
+        "Role": {
+          "Ref": "AWSGlueServiceRoleDQ"
+        }
+      }
+    },
+    "EvaluationJobTrigger": {
+      "Type": "AWS::Glue::Trigger",
+      "DependsOn": [
+        "AutomateDQEvaluation"
+      ],
+      "Properties": {
+        "Type": "SCHEDULED",
+        "Description": "Trigger for DQ Evaluation Job execution",
+        "Schedule": "cron(0 7 1 * ? *)",
+        "Actions": [
+          {
+            "JobName": {
+              "Ref": "AutomateDQEvaluation"
+            }
+          }
+        ],
+        "Name": {
+          "Fn::Sub": "DQ-Evalutaion-Trigger-${BillingEnvironmentName}"
+        }
+      }
+    },
+	"DataQualityDatabase":{
+		"Type" : "AWS::Glue::Database",
+		"Properties" : {
+		"CatalogId" : {
+			"Ref": "AWS::AccountId"
+		},
+		"DatabaseInput" : 
+		{
+			"Name" :
+			{
+				"Fn::Sub": "global-data-quality-${BillingEnvironmentName}"
+			}
+		}
+		}
+	},	
+    "DataQualityCrawler": {
+      "Type": "AWS::Glue::Crawler",
+      "DependsOn": [
+        "AWSGlueServiceRoleDQ",
+		"DataQualityDatabase"
+      ],
+      "Properties": {
+        "Role": {
+          "Fn::GetAtt": [
+            "AWSGlueServiceRoleDQ",
+            "Arn"
+          ]
+        },
+        "Schedule": {
+          "ScheduleExpression": "cron(0 12 * * ? *)"
+        },
+        "Classifiers": [],
+        "Description": "Crawls S3 Bucket that stores Data Quality results to identify the schema for Athena",
+        "SchemaChangePolicy": {
+          "UpdateBehavior": "UPDATE_IN_DATABASE",
+          "DeleteBehavior": "DEPRECATE_IN_DATABASE"
+        },
+        "DatabaseName": {
+          "Ref":"DataQualityDatabase"
+        },
+        "TablePrefix": "data_quality_",
+        "Targets": {
+          "S3Targets": [
+            {
+              "Path": {
+                "Fn::Join": [
+                  "/",
+                  [
+                    {
+                      "Fn::ImportValue": {
+                        "Fn::Sub": "rawzone-bucket-${BillingEnvironmentName}"
+                      }
+                    },
+                    "data_quality",
+                    "results"
+                  ]
+                ]
+              }
+            }
+          ]
+        },
+        "Name": {
+          "Fn::Join": [
+            "_",
+            [
+              "dataquality_crawler",
+              {
+                "Ref": "BillingEnvironmentName"
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "DataQualityCrawlerRows": {
+      "Type": "AWS::Glue::Crawler",
+      "DependsOn": [
+        "AWSGlueServiceRoleDQ",
+		"DataQualityDatabase"
+      ],
+      "Properties": {
+        "Role": {
+          "Fn::GetAtt": [
+            "AWSGlueServiceRoleDQ",
+            "Arn"
+          ]
+        },
+        "Schedule": {
+          "ScheduleExpression": "cron(0 12 * * ? *)"
+        },
+        "Classifiers": [],
+        "Description": "Crawls S3 Bucket that stores Data Quality row level outcomes to identify the schema for Athena",
+        "SchemaChangePolicy": {
+          "UpdateBehavior": "UPDATE_IN_DATABASE",
+          "DeleteBehavior": "DEPRECATE_IN_DATABASE"
+        },
+        "DatabaseName": {
+          "Ref":"DataQualityDatabase"
+        },
+        "TablePrefix": "data_quality_",
+        "Targets": {
+          "S3Targets": [
+            {
+              "Path": {
+                "Fn::Join": [
+                  "/",
+                  [
+                    {
+                        "Fn::Sub": "rx-gbs-datalake-data-quality-zone-${BillingEnvironmentName}"
+                    },
+                    "rows"
+                  ]
+                ]
+              }
+            }
+          ]
+        },
+        "Name": {
+          "Fn::Join": [
+            "_",
+            [
+              "dataquality_crawler_row_level",
+              {
+                "Ref": "BillingEnvironmentName"
+              }
+            ]
+          ]
+        }
+      }
+    },
+	"RecommendationDynamoDBTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "executedon",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "tablename",
+            "AttributeType": "S"
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "executedon",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "tablename",
+            "KeyType": "RANGE"
+          }
+        ],
+        "ProvisionedThroughput": {
+          "ReadCapacityUnits": "1",
+          "WriteCapacityUnits": "1"
+        },
+        "TableName": {
+          "Fn::Sub": "DQ_Ruleset_Creation_RunLog_${BillingEnvironmentName}"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "rx-gbs-datalake-dq-ruleset-creation-log-table"
+          },
+          {
+            "Key": "rx:billing:finance-activity-id",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "FinanceActivityId"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:finance-entity-id",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "FinanceEntityId"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:finance-management-centre-id",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "FinanceManagementCentreId"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:jira-project-code",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "JiraProjectCode"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:pm-programme",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "PmProgramme"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:pm-project-code",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "PmProjectCode"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:environment-name",
+            "Value": {
+              "Ref": "BillingEnvironmentName"
+            }
+          }
+        ]
+      }
+    },
+	"EvaluationDynamoDBTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "executedon",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "tablename",
+            "AttributeType": "S"
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "executedon",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "tablename",
+            "KeyType": "RANGE"
+          }
+        ],
+        "ProvisionedThroughput": {
+          "ReadCapacityUnits": "1",
+          "WriteCapacityUnits": "1"
+        },
+        "TableName": {
+          "Fn::Sub": "DQ_Evaulation_RunLog_${BillingEnvironmentName}"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "rx-gbs-datalake-dq-evaluation-log-table"
+          },
+          {
+            "Key": "rx:billing:finance-activity-id",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "FinanceActivityId"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:finance-entity-id",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "FinanceEntityId"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:finance-management-centre-id",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "FinanceManagementCentreId"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:jira-project-code",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "JiraProjectCode"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:pm-programme",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "PmProgramme"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:pm-project-code",
+            "Value": {
+              "Fn::FindInMap": [
+                "General",
+                "Tags",
+                "PmProjectCode"
+              ]
+            }
+          },
+          {
+            "Key": "rx:billing:environment-name",
+            "Value": {
+              "Ref": "BillingEnvironmentName"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "AWSGlueServiceDQRoleARN": {
+      "Value": {
+        "Fn::GetAtt": [
+          "AWSGlueServiceRoleDQ",
+          "Arn"
+        ]
+      },
+      "Description": "DQ Service Role ARN",
+      "Export": {
+        "Name": "data-quality-role-arn"
+      }
+    },
+    "DataQualityZoneKMSKeyOutput": {
+      "Description": "DataQualityZone KMS Key created using this template",
+      "Value": {
+        "Fn::GetAtt": [
+          "DataQualityZoneKMSKey",
+          "Arn"
+        ]
+      },
+      "Export": {
+        "Name": {
+          "Fn::Sub": "dataquality-zone-kms-key-arn-${BillingEnvironmentName}"
+        }
+      }
+    }
+  }
+}
